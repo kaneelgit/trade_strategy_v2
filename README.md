@@ -1,1 +1,2 @@
-#Trading Strategy Version 2
+**Trading Strategy Version 2**
+
