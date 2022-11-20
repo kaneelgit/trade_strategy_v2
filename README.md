@@ -1,8 +1,8 @@
-###Trading Strategy Version 2###
+# Trading Strategy Version 2
 
 Machine Learning based trading strategy to test buying and selling opportunities. 
 
-Results
+# Results
 
 TBA.
 
