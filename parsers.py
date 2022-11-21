@@ -5,7 +5,7 @@ Date - 11/20/2022
 import argparse
 
 #get credentials file
-with open('credentials.txt', 'r') as f:
+with open('/mnt/c/Users/kanee/Desktop/git/trading_strategy_v2/credentials.txt', 'r') as f:
     API_KEY = f.readlines()[0]
 
 dow = ['AXP', 'AMGN', 'AAPL', 'BA', 'CAT', 'CSCO', 'CVX', 'GS', 'HD', 'HON', 'IBM', 'INTC',\
