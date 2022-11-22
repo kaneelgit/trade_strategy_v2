@@ -21,6 +21,7 @@ from scipy.signal import argrelextrema
 import tqdm
 from parsers import train_vars
 args = train_vars()
+from scipy import stats
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -135,6 +136,27 @@ def n_day_regression(n, df, idxs):
             
     return df
 
+def volume_bs(volume, open, close):
+
+    if (close - open) <= 0:
+        v = -1
+    else:
+        v = 1
+
+    return volume * v
+
+def n_day_regression_v2(df):
+    """
+    create regressions
+    """
+    df['lr3'] = df['close'].rolling(3).apply(lambda x: stats.linregress(x.index, x)[0])
+    df['lr5'] = df['close'].rolling(5).apply(lambda x: stats.linregress(x.index, x)[0])
+    df['lr10'] = df['close'].rolling(10).apply(lambda x: stats.linregress(x.index, x)[0])
+    df['lr20'] = df['close'].rolling(20).apply(lambda x: stats.linregress(x.index, x)[0])
+    df['volume2'] = df.apply(lambda x: volume_bs(x.volume, x.open, x.close), axis = 1)
+
+    return df
+
 def normalized_values(high, low, close):
     """
     normalize the price between 0 and 1.
@@ -190,12 +212,8 @@ def create_dataset(stock, df, start, end):
     """
     data, idxs_with_mins, idxs_with_maxs = get_data(stock, start, end)
 
-    #create regressions for 3, 5, 10 and 20 days
-    data = n_day_regression(3, data, list(idxs_with_mins) + list(idxs_with_maxs))
-    data = n_day_regression(5, data, list(idxs_with_mins) + list(idxs_with_maxs))
-    data = n_day_regression(10, data, list(idxs_with_mins) + list(idxs_with_maxs))
-    data = n_day_regression(20, data, list(idxs_with_mins) + list(idxs_with_maxs))
-    
+    data = n_day_regression_v2(data)
+
     #get month to the dataset
     def get_month(x):
         return x.month
@@ -203,8 +221,8 @@ def create_dataset(stock, df, start, end):
     
     data_ = data[(data['loc_min'] > 0) | (data['loc_max'] > 0)].reset_index(drop = True) #think about changing the target to 1 here.
     data_['target'] = [1 if x > 0 else 0 for x in data_.loc_max]
-    cols_of_interest = ['volume', 'month', 'date', \
-        'normalized_value', '3_reg', '5_reg', '10_reg', '20_reg', 'target']
+    cols_of_interest = ['volume2', 'month', 'date', \
+        'normalized_value', 'lr3', 'lr5', 'lr10', 'lr20', 'target']
     data_ = data_[cols_of_interest]
     data_ = data_.dropna(axis = 0).reset_index(drop = True)
    
@@ -212,9 +230,6 @@ def create_dataset(stock, df, start, end):
     data_['eps_actual'] = np.nan
     data_['eps_surprise'] = np.nan
     data_['eps_growth'] = np.nan
-
-    # #get the earnings dataframe
-    # df = earnings_df(stock)
    
     #get earnings for each data (find a better way to do this)
     for i in range(len(data_)):
@@ -222,13 +237,13 @@ def create_dataset(stock, df, start, end):
         data_['eps_actual'][i] = eps_actual
         data_['eps_surprise'][i] = eps_surprise
         data_['eps_growth'][i] = eps_growth
-
-    cols_of_interest = ['volume', 'month', 'normalized_value', '3_reg', '5_reg',
-       '10_reg', '20_reg', 'eps_actual', 'eps_surprise',
+    
+    cols_of_interest = ['volume2', 'month', 'date', \
+        'normalized_value', 'lr3', 'lr5', 'lr10', 'lr20', 'eps_actual', 'eps_surprise',
        'eps_growth', 'target']
 
     data_ = data_[cols_of_interest].dropna(axis = 0)   
-
+    
     return data_
 
 def create_train_test_set(stock_list, args):
@@ -287,11 +302,8 @@ def get_data_for_date(stock, end_date, earnings_dataframe):
     idxs = np.arange(0, len(data))
 
     #create regressions for 3, 5, 10 and 20 days
-    data = n_day_regression(3, data, idxs)
-    data = n_day_regression(5, data, idxs)
-    data = n_day_regression(10, data, idxs)
-    data = n_day_regression(20, data, idxs)
-
+    data = n_day_regression_v2(data)
+    
     #get month to the dataset
     def get_month(x):
         return x.month
@@ -306,9 +318,9 @@ def get_data_for_date(stock, end_date, earnings_dataframe):
     data['eps_surprise'] = eps_surprise
     data['eps_growth'] = eps_growth
     
-    #columns needed in order
-    cols_of_interest = ['volume', 'month', 'normalized_value', '3_reg', '5_reg',
-       '10_reg', '20_reg', 'eps_actual', 'eps_surprise',
+    #columns needed in order    
+    cols_of_interest = ['volume2', 'month', \
+        'normalized_value', 'lr3', 'lr5', 'lr10', 'lr20', 'eps_actual', 'eps_surprise',
        'eps_growth']
     
     return data[cols_of_interest], data['close'][0]

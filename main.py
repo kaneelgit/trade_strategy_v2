@@ -170,4 +170,6 @@ if __name__ == "__main__":
 
     #import args
     args = parsers.train_vars()
-    lr_training = LR_training(args)
+    # lr_training = LR_training(args)
+    stocks_list = ["BA"]
+    create_train_test_set(stocks_list, args)
