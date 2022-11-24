@@ -1,9 +1,10 @@
 # ML Trading Strategy Version 2
 
+This repository is dedicated to present a machine learning approach to predict stock movements. 
 
 # Results
 
-<u> Model 1 </u>
+### Model 1 ###
 
 Description - 
 
