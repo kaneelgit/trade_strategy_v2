@@ -11,6 +11,7 @@ Input variables - eps_actual, month, eps_surprise, eps_growth, volume, normalize
 
 Output variables - probability of the data point being a buy or a sell
 
-[coefficients](https://user-images.githubusercontent.com/85404022/203858779-0162d151-62af-47fb-97f8-71e4139e969b.jpg)
+![coefficients](https://user-images.githubusercontent.com/85404022/203859474-dfdfe3e7-1a91-4cd3-9983-a68c0f3b0ada.jpg)
+
 
 Using past eps, eps surprise & eps growth has little effect on the output.
