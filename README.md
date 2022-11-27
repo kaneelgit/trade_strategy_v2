@@ -32,3 +32,7 @@ Sample prediction on Visa (V) stock.
 
 ![V](https://user-images.githubusercontent.com/85404022/204144822-8ecda33e-b301-4de5-8fe2-6966230ac30d.png)
 
+### Model 2 - Rolling average probability in the last 3 days ###
+
+![V](https://user-images.githubusercontent.com/85404022/204152236-63811069-785a-4949-874b-12768ffa3564.png)
+
