@@ -157,6 +157,16 @@ def n_day_regression_v2(df):
 
     return df
 
+def n_week_regression_v2(df):
+    """
+    create regressions faster version
+    """
+    df['lr2'] = df['close'].rolling(2).apply(lambda x: stats.linregress(x.index, x)[0])
+    df['lr3'] = df['close'].rolling(3).apply(lambda x: stats.linregress(x.index, x)[0])
+    df['volume2'] = df.apply(lambda x: volume_bs(x.volume, x.open, x.close), axis = 1)
+
+    return df
+
 def normalized_values(high, low, close):
     """
     normalize the price between 0 and 1.
@@ -243,12 +253,12 @@ def get_data_weekly(stock, start_date = None, end_date = None, n = 10):
     return data, idx_with_mins, idx_with_maxs
 
 
+
 def create_dataset(stock, start, end, earnings = False, df = None):
     """
     Get training and testing datasets.
     """
-    data, idxs_with_mins, idxs_with_maxs = get_data(stock, start, end)
-    
+    data, _, _ = get_data(stock, start, end)
     data = n_day_regression_v2(data)
 
     #get month to the dataset
@@ -283,6 +293,27 @@ def create_dataset(stock, start, end, earnings = False, df = None):
     
         data_ = data_[cols_of_interest].dropna(axis = 0)   
     
+    return data_
+
+def create_dataset_weekly(stock, start, end):
+    """
+    Get training and testing datasets.
+    """
+    data, _, _ = get_data_weekly(stock, start, end)
+    data = n_week_regression_v2(data)
+
+    #get month to the dataset
+    def get_month(x):
+        return x.month
+    data['month'] = data['date'].apply(get_month)
+    
+    data_ = data[(data['loc_min'] > 0) | (data['loc_max'] > 0)].reset_index(drop = True) #think about changing the target to 1 here.
+    data_['target'] = [1 if x > 0 else 0 for x in data_.loc_max]
+    cols_of_interest = ['volume2', 'month', 'date', \
+        'normalized_value', 'lr2', 'lr3', 'target']
+    data_ = data_[cols_of_interest]
+    data_ = data_.dropna(axis = 0).reset_index(drop = True)
+
     return data_
 
 def create_train_test_set(stock_list, args, earnings = False):
@@ -343,6 +374,52 @@ def create_train_test_set(stock_list, args, earnings = False):
                 train_df.pop('date')
                 test_df.pop('date')
                 
+            #sleep for 2 seconds 
+            time.sleep(2)
+        except:
+            print(f'{stock} data could not be fetched')
+            time.sleep(5)
+
+    return train_df, test_df
+
+def create_train_test_set_weekly(stock_list, args):
+    """
+    This function creates a train test set given the test date range.
+    """
+    train_df = pd.DataFrame()
+    test_df = pd.DataFrame()
+    
+    for stock in tqdm.tqdm(stock_list):
+
+        try:
+            #get test_date_range
+            test_date_range = args.test_date_range
+            test_start = datetime.strptime(test_date_range[0], '%m/%d/%Y')
+            test_end = datetime.strptime(test_date_range[1], '%m/%d/%Y')
+            
+            #data range
+            data_start = datetime(2008, 1, 1)
+            data_end = datetime(2022, 9, 1)
+
+            #get training data range
+            train_start_1 = data_start
+            train_end_1 = test_start - timedelta(days = 1)
+            train_start_2 = test_end + timedelta(days = 1)
+            train_end_2 = data_end
+            
+            #create train and test data
+            train_data1 = create_dataset_weekly(stock, train_start_1, train_end_1)
+            train_data2 = create_dataset_weekly(stock, train_start_2, train_end_2)
+            train_data = pd.concat([train_data1, train_data2], axis = 0).reset_index(drop = True)
+
+            test_data = create_dataset_weekly(stock, test_start, test_end)
+
+            train_df = pd.concat([train_df, train_data], axis = 0).reset_index(drop = True)
+            test_df = pd.concat([test_df, test_data], axis = 0).reset_index(drop = True)
+            
+            train_df.pop('date')
+            test_df.pop('date')
+            
             #sleep for 2 seconds 
             time.sleep(2)
         except:
@@ -468,7 +545,7 @@ def create_plot(stock, scaler, model, args, save_dir = None):
     except:
         pass
 
-def create_plot_v2(stock, scaler, model, args, save_dir = None):
+def create_plot_v2(stock, scaler, model, args, save_dir = None, average_pred = True):
     """
     Creates a plot with predictions given the scaler and the model. Not using earnings data.
     """
@@ -480,10 +557,6 @@ def create_plot_v2(stock, scaler, model, args, save_dir = None):
         start = test_start - timedelta(days = 100)
         test_end = datetime.strptime(test_date_range[1], '%m/%d/%Y') 
         end = test_end + timedelta(days = 100)
-
-        #predictions
-        predicted_days = []
-        predicted_day_price = []
 
         #get data for the stock
         start_date = test_start
@@ -505,14 +578,28 @@ def create_plot_v2(stock, scaler, model, args, save_dir = None):
         input_scaled = scaler.transform(input_data)
         output_probs = model.predict_proba(input_scaled)
         pred_buys, pred_sells = _threshold(output_probs, args.threshold)
+        #create new nan columns for predictions
         data['pred_buy'] = np.nan
         data['pred_sell'] = np.nan
+        data['prob_buy'] = np.nan
+        data['prob_sell'] = np.nan
+        #fill them with appropriate values
+        data['prob_buy'][indxs] = output_probs[:, 0]
+        data['prob_sell'][indxs] = output_probs[:, 1]
         data['pred_buy'][indxs] = pred_buys
         data['pred_sell'][indxs] = pred_sells
-        # data['pred_buy_price'] = np.nan
-        # data['pred_sell_price'] = np.nan
-        data['pred_buy_price'] = [x if y < 1 else np.nan for (x, y) in zip(data.close, data.pred_buy)]
-        data['pred_sell_price'] = [x if y > 0 else np.nan for (x, y) in zip(data.close, data.pred_sell)]
+
+        if average_pred:
+
+            data['pred_buy_rolling'] = data['prob_buy'].rolling(3).mean()
+            data['pred_sell_rolling'] = data['prob_sell'].rolling(3).mean()
+
+            data['pred_buy_price'] = [x if y > args.threshold else np.nan for (x, y) in zip(data.close, data.pred_buy_rolling)]
+            data['pred_sell_price'] = [x if y > args.threshold else np.nan for (x, y) in zip(data.close, data.pred_sell_rolling)]
+        
+        else:
+            data['pred_buy_price'] = [x if y < 1 else np.nan for (x, y) in zip(data.close, data.pred_buy)]
+            data['pred_sell_price'] = [x if y > 0 else np.nan for (x, y) in zip(data.close, data.pred_sell)]
         
         test_start_ind = data[data['date'] < test_start].index[-1] + 1
         test_end_ind = data[data['date'] > test_end].index[0] + 1
