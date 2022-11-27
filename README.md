@@ -16,3 +16,19 @@ Output variables - probability of the data point being a buy or a sell
 
 
 Using past eps, eps surprise & eps growth has little effect on the output.
+
+
+### Model 2 ###
+
+Description - 
+
+Input variables - volume, month, normalized_value, 20 day logistic regression, 10 day logistic regression, 3 day logistic regression and 5 day logistic regression
+
+Output variables - probability of the data point being a buy or a sell
+
+![coefficients](https://user-images.githubusercontent.com/85404022/204144762-4f6fbeef-dcb1-45bb-95c8-afd395a6a767.jpg)
+
+Sample prediction on Visa (V) stock.
+
+![V](https://user-images.githubusercontent.com/85404022/204144822-8ecda33e-b301-4de5-8fe2-6966230ac30d.png)
+
