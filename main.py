@@ -7,7 +7,7 @@ current = os.path.dirname(os.path.realpath(__file__))
 parent = os.path.dirname(current)
 sys.path.append(parent)
 import parsers
-from utils.stock_utils import create_train_test_set, create_plot
+from utils.stock_utils import create_train_test_set, create_plot, create_plot_v2
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
@@ -29,7 +29,7 @@ class LR_training:
         self.model_name = args.model_name
         self.threshold = args.threshold
         self.stock_list = parsers.dow
-
+        # self.stock_list = ["BA", "AAPL"]
         #initialize models
         self.scaler = MinMaxScaler()
         self.lr = LogisticRegression()
@@ -101,7 +101,7 @@ class LR_training:
         """
         save the model in the saved models folder.
         """
-        saved_models_dir = os.path.join(parent, 'saved_models')
+        saved_models_dir = 'saved_models'
         model_file = f'lr_{self.model_name}.sav'
         model_dir = os.path.join(saved_models_dir, model_file)
         pickle.dump(self.lr, open(model_dir, 'wb'))
@@ -117,7 +117,7 @@ class LR_training:
         save results in the results folder
         """
         folder_name = f'lr_{self.model_name}'
-        results_dir = os.path.join(parent, f'results/{folder_name}')
+        results_dir = os.path.join('results', f'{folder_name}')
       
         if not os.path.exists(results_dir):
             os.makedirs(results_dir)
@@ -152,7 +152,7 @@ class LR_training:
         print(f'Figures and summary saved in {results_dir}')
 
         #save coefficients
-        predictor_names = self.columns[:10]
+        predictor_names = self.columns[:len(self.columns)-1]
         coefficients = self.lr.coef_.ravel()
         coef = pd.Series(coefficients, predictor_names).sort_values()
         plt.figure()
@@ -163,13 +163,13 @@ class LR_training:
         #create plot
         for stock in tqdm(self.stock_list):
             save_dir = os.path.join(pred_results_dir, str(stock))
-            create_plot(stock, self.scaler, self.lr, self.args, save_dir)
+            create_plot_v2(stock, self.scaler, self.lr, self.args, save_dir)
 
 
 if __name__ == "__main__":
 
     #import args
     args = parsers.train_vars()
-    # lr_training = LR_training(args)
-    stocks_list = ["BA"]
-    create_train_test_set(stocks_list, args)
+    lr_training = LR_training(args)
+
+    

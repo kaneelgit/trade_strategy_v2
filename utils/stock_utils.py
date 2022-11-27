@@ -147,7 +147,7 @@ def volume_bs(volume, open, close):
 
 def n_day_regression_v2(df):
     """
-    create regressions
+    create regressions faster version
     """
     df['lr3'] = df['close'].rolling(3).apply(lambda x: stats.linregress(x.index, x)[0])
     df['lr5'] = df['close'].rolling(5).apply(lambda x: stats.linregress(x.index, x)[0])
@@ -206,12 +206,49 @@ def get_data(stock, start_date = None, end_date = None, n = 10):
     
     return data, idx_with_mins, idx_with_maxs
 
-def create_dataset(stock, df, start, end):
+def get_data_weekly(stock, start_date = None, end_date = None, n = 10):
+    """
+    This function gets the required data given the stock, date range. n value is the amount of days. Start date and end date both are required.
+    """
+    if None in (start_date, end_date):
+        print('Need both start and end date')
+        return None, None, None
+
+    #enter url
+    url = f'https://api.tdameritrade.com/v1/marketdata/{stock}/pricehistory'
+    
+    payload = {'apikey': str(parsers.API_KEY),'startDate': timestamp(start_date), \
+            'endDate': timestamp(end_date), 'periodType': 'year', 'frequencyType': \
+            'weekly', 'frequency': '1', 'needExtendedHoursData': 'False'}
+ 
+    #request
+    results = requests.get(url, params = payload)
+    data = results.json()
+
+    #change the data from ms to datetime format
+    data = pd.DataFrame(data['candles'])
+    data['date'] = pd.to_datetime(data['datetime'], unit = 'ms')
+
+    #add the noramlzied value function and create a new column
+    data['normalized_value'] = data.apply(lambda x: normalized_values(x.high, x.low, x.close), axis = 1)
+    
+    #column with local minima and maxima
+    data['loc_min'] = data.iloc[argrelextrema(data.close.values, np.less_equal, order = n)[0]]['close']
+    data['loc_max'] = data.iloc[argrelextrema(data.close.values, np.greater_equal, order = n)[0]]['close']
+
+    #idx with mins and max
+    idx_with_mins = np.where(data['loc_min'] > 0)[0]
+    idx_with_maxs = np.where(data['loc_max'] > 0)[0]
+    
+    return data, idx_with_mins, idx_with_maxs
+
+
+def create_dataset(stock, start, end, earnings = False, df = None):
     """
     Get training and testing datasets.
     """
     data, idxs_with_mins, idxs_with_maxs = get_data(stock, start, end)
-
+    
     data = n_day_regression_v2(data)
 
     #get month to the dataset
@@ -225,28 +262,30 @@ def create_dataset(stock, df, start, end):
         'normalized_value', 'lr3', 'lr5', 'lr10', 'lr20', 'target']
     data_ = data_[cols_of_interest]
     data_ = data_.dropna(axis = 0).reset_index(drop = True)
-   
-    #create three empty columns
-    data_['eps_actual'] = np.nan
-    data_['eps_surprise'] = np.nan
-    data_['eps_growth'] = np.nan
-   
-    #get earnings for each data (find a better way to do this)
-    for i in range(len(data_)):
-        eps_actual, eps_surprise, eps_growth = get_earnings(df, data_['date'][i])
-        data_['eps_actual'][i] = eps_actual
-        data_['eps_surprise'][i] = eps_surprise
-        data_['eps_growth'][i] = eps_growth
     
-    cols_of_interest = ['volume2', 'month', 'date', \
-        'normalized_value', 'lr3', 'lr5', 'lr10', 'lr20', 'eps_actual', 'eps_surprise',
-       'eps_growth', 'target']
+    if earnings:
 
-    data_ = data_[cols_of_interest].dropna(axis = 0)   
+        #create three empty columns
+        data_['eps_actual'] = np.nan
+        data_['eps_surprise'] = np.nan
+        data_['eps_growth'] = np.nan
+    
+        #get earnings for each data (find a better way to do this)
+        for i in range(len(data_)):
+            eps_actual, eps_surprise, eps_growth = get_earnings(df, data_['date'][i])
+            data_['eps_actual'][i] = eps_actual
+            data_['eps_surprise'][i] = eps_surprise
+            data_['eps_growth'][i] = eps_growth
+        
+        cols_of_interest = ['volume2', 'month', 'date', \
+            'normalized_value', 'lr3', 'lr5', 'lr10', 'lr20', 'eps_actual', 'eps_surprise',
+        'eps_growth', 'target']
+    
+        data_ = data_[cols_of_interest].dropna(axis = 0)   
     
     return data_
 
-def create_train_test_set(stock_list, args):
+def create_train_test_set(stock_list, args, earnings = False):
     """
     This function creates a train test set given the test date range.
     """
@@ -271,19 +310,39 @@ def create_train_test_set(stock_list, args):
             train_start_2 = test_end + timedelta(days = 1)
             train_end_2 = data_end
             
-            #get earnings df for the stock
-            df = earnings_df(stock)
+            if earnings:
 
-            #create train and test data
-            train_data1 = create_dataset(stock, df, train_start_1, train_end_1)
-            train_data2 = create_dataset(stock, df, train_start_2, train_end_2)
-            train_data = pd.concat([train_data1, train_data2], axis = 0).reset_index(drop = True)
+                #get earnings df for the stock
+                df = earnings_df(stock)
 
-            test_data = create_dataset(stock, df, test_start, test_end)
+                #create train and test data
+                train_data1 = create_dataset(stock, train_start_1, train_end_1, earnings = True, df = df)
+                train_data2 = create_dataset(stock, train_start_2, train_end_2, earnings = True, df = df)
+                train_data = pd.concat([train_data1, train_data2], axis = 0).reset_index(drop = True)
 
-            train_df = pd.concat([train_df, train_data], axis = 0).reset_index(drop = True)
-            test_df = pd.concat([test_df, test_data], axis = 0).reset_index(drop = True)
+                test_data = create_dataset(stock, test_start, test_end, earnings = True, df = df)
+
+                train_df = pd.concat([train_df, train_data], axis = 0).reset_index(drop = True)
+                test_df = pd.concat([test_df, test_data], axis = 0).reset_index(drop = True)
+                
+                train_df.pop('date')
+                test_df.pop('date')
             
+            else:
+
+                #create train and test data
+                train_data1 = create_dataset(stock, train_start_1, train_end_1)
+                train_data2 = create_dataset(stock, train_start_2, train_end_2)
+                train_data = pd.concat([train_data1, train_data2], axis = 0).reset_index(drop = True)
+
+                test_data = create_dataset(stock, test_start, test_end)
+
+                train_df = pd.concat([train_df, train_data], axis = 0).reset_index(drop = True)
+                test_df = pd.concat([test_df, test_data], axis = 0).reset_index(drop = True)
+                
+                train_df.pop('date')
+                test_df.pop('date')
+                
             #sleep for 2 seconds 
             time.sleep(2)
         except:
@@ -292,7 +351,7 @@ def create_train_test_set(stock_list, args):
 
     return train_df, test_df
 
-def get_data_for_date(stock, end_date, earnings_dataframe):
+def get_data_for_date(stock, end_date, earnings_dataframe = None):
     """
     Prepares a the dataset to input to the model given the date
     """
@@ -312,16 +371,25 @@ def get_data_for_date(stock, end_date, earnings_dataframe):
     #get only the last index (day)
     data = data[-1:].reset_index(drop = True)
     
-    #get earnings dataframe
-    eps_actual, eps_surprise, eps_growth = get_earnings(earnings_dataframe, data['date'][0])
-    data['eps_actual'] = eps_actual
-    data['eps_surprise'] = eps_surprise
-    data['eps_growth'] = eps_growth
+    if earnings_dataframe is not None:
+
+        #get earnings dataframe
+        eps_actual, eps_surprise, eps_growth = get_earnings(earnings_dataframe, data['date'][0])
+        data['eps_actual'] = eps_actual
+        data['eps_surprise'] = eps_surprise
+        data['eps_growth'] = eps_growth
+        
+        #columns needed in order    
+        cols_of_interest = ['volume2', 'month', \
+            'normalized_value', 'lr3', 'lr5', 'lr10', 'lr20', 'eps_actual', 'eps_surprise',
+        'eps_growth']
     
-    #columns needed in order    
-    cols_of_interest = ['volume2', 'month', \
-        'normalized_value', 'lr3', 'lr5', 'lr10', 'lr20', 'eps_actual', 'eps_surprise',
-       'eps_growth']
+    else:
+
+        #columns needed in order    
+        cols_of_interest = ['volume2', 'month', \
+            'normalized_value', 'lr3', 'lr5', 'lr10', 'lr20']
+
     
     return data[cols_of_interest], data['close'][0]
 
@@ -329,9 +397,9 @@ def _threshold(probs, threshold):
     """
     Inputs the probability and returns 1 or 0 based on the threshold
     """
-    prob_thresholded = [0 if x > threshold else 1 for x in probs[:, 0]]
-
-    return np.array(prob_thresholded)
+    prob_buy = [0 if x > threshold else 1 for x in probs[:, 0]]
+    prob_sell = [1 if x > threshold else 0 for x in probs[:, 1]]
+    return np.array(prob_buy), np.array(prob_sell)
 
 def create_plot(stock, scaler, model, args, save_dir = None):
     """
@@ -360,7 +428,7 @@ def create_plot(stock, scaler, model, args, save_dir = None):
         while start_date <= test_end:
             
             #get data for the date
-            data, close_price = get_data_for_date(stock, start_date, earnings_dataframe)
+            data, close_price = get_data_for_date(stock, start_date)
 
             #scale the data
             input_data_scaled = scaler.transform(data.to_numpy())
@@ -399,3 +467,84 @@ def create_plot(stock, scaler, model, args, save_dir = None):
     
     except:
         pass
+
+def create_plot_v2(stock, scaler, model, args, save_dir = None):
+    """
+    Creates a plot with predictions given the scaler and the model. Not using earnings data.
+    """
+    try:
+
+        #get test_date_range
+        test_date_range = args.test_date_range
+        test_start = datetime.strptime(test_date_range[0], '%m/%d/%Y') 
+        start = test_start - timedelta(days = 100)
+        test_end = datetime.strptime(test_date_range[1], '%m/%d/%Y') 
+        end = test_end + timedelta(days = 100)
+
+        #predictions
+        predicted_days = []
+        predicted_day_price = []
+
+        #get data for the stock
+        start_date = test_start
+        delta = timedelta(days = 1)
+
+        #get data to plot
+        data, _, _ = get_data(stock, start, end)
+        data = n_day_regression_v2(data)
+        def get_month(x):
+            return x.month
+        data['month'] = data['date'].apply(get_month)
+
+        cols_of_interest = ['volume2', 'month', \
+            'normalized_value', 'lr3', 'lr5', 'lr10', 'lr20']
+        
+        input_data = data[cols_of_interest]
+        input_data = input_data.dropna(axis = 0)
+        indxs = input_data.index
+        input_scaled = scaler.transform(input_data)
+        output_probs = model.predict_proba(input_scaled)
+        pred_buys, pred_sells = _threshold(output_probs, args.threshold)
+        data['pred_buy'] = np.nan
+        data['pred_sell'] = np.nan
+        data['pred_buy'][indxs] = pred_buys
+        data['pred_sell'][indxs] = pred_sells
+        # data['pred_buy_price'] = np.nan
+        # data['pred_sell_price'] = np.nan
+        data['pred_buy_price'] = [x if y < 1 else np.nan for (x, y) in zip(data.close, data.pred_buy)]
+        data['pred_sell_price'] = [x if y > 0 else np.nan for (x, y) in zip(data.close, data.pred_sell)]
+        
+        test_start_ind = data[data['date'] < test_start].index[-1] + 1
+        test_end_ind = data[data['date'] > test_end].index[0] + 1
+        data['pred_sell_price'][0:test_start_ind] = np.nan
+        data['pred_buy_price'][0:test_start_ind] = np.nan
+        data['pred_sell_price'][test_end_ind: len(data) - 1] = np.nan
+        data['pred_buy_price'][test_end_ind: len(data) - 1] = np.nan
+
+
+        #plot the figure
+        plt.figure()
+        plt.plot(data['date'], data['close'], color = 'k', linewidth = 0.5)
+        plt.scatter(data['date'], data['pred_buy_price'], color = 'green', s = 40, alpha = 1)
+        plt.scatter(data['date'], data['pred_sell_price'], color = 'red', s = 40, alpha = 1)
+        plt.xticks(rotation = 90)
+        plt.fill_between([start, test_start], [data['close'].min()], [data['close'].max()], color = 'grey', alpha = 0.7)
+        plt.fill_between([test_end, end], [data['close'].min()], [data['close'].max()], color = 'grey', alpha = 0.7)
+        plt.fill_between([test_start, test_end], [data['close'].min()], [data['close'].max()], color = 'grey', alpha = 0.1)
+        plt.title(f'{stock} predictions')
+        dark_grey = mpatches.Patch(color = 'grey', alpha = 0.7, label = 'Train data')
+        light_grey = mpatches.Patch(color = 'grey', alpha = 0.2, label = 'Test data')
+        green_circle = Line2D([0], [0], marker='o', color='w', label='Predicted buying opportunities',
+                            markerfacecolor='green', markersize=15)
+        red_circle = Line2D([0], [0], marker='o', color='w', label='Predicted selling opportunities',
+                            markerfacecolor='red', markersize=15)
+        plt.legend(handles = [dark_grey, light_grey, green_circle, red_circle])
+        plt.tight_layout()
+        if save_dir:
+            plt.savefig(save_dir)
+        else:
+            plt.savefig('test.png')
+    
+    except:
+        pass
+
